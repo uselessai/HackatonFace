@@ -1,1086 +1,366 @@
-// Spark AR modules
-const Diagnostics = require("Diagnostics");
-const Scene = require("Scene");
-const Animation = require("Animation");
-const TouchGestures = require("TouchGestures");
-const Time = require("Time");
-const Reactive = require("Reactive");
-const Materials = require("Materials");
-const Textures = require("Textures");
-const Audio = require("Audio");
-const Instruction = require("Instruction");
-const CameraInfo = require("CameraInfo");
+//==============================================================================
+// Welcome to scripting in Spark AR Studio! Helpful links:
+//
+// Scripting Basics - https://fb.me/spark-scripting-basics
+// Reactive Programming - https://fb.me/spark-reactive-programming
+// Scripting Object Reference - https://fb.me/spark-scripting-reference
+// Changelogs - https://fb.me/spark-changelog
+//==============================================================================
 
-// Game objects
-const player = Scene.root.find("personaje");
-// const blocks = Scene.root.find("blocks");
-// const platforms = Scene.root.find("platforms");
-// const obstacle = Scene.root.find("spikes");
-// const switches = Scene.root.find("switches");
-// const buttons = Scene.root.find("buttons");
+// Load in modules
+//==============================================================================
+// Helper modules
+const Diagnostics = require('Diagnostics');
+const Scene = require('Scene');
+const R = require('Reactive');
+const Textures = require('Textures');
+// Animate objects
+const Animation = require('Animation');
+// Trigger actions after set delays/intervals
+const Time = require('Time');
+// Read/store data on user's device to track high scores
+const Persistence = require('Persistence');
+// Send receive data between script and patches
+const Patches = require('Patches');
 
-const buttonLeft = Scene.root.find("botonleft");
-const buttonRight = Scene.root.find("botonright");
-const buttonPunch = Scene.root.find("botonpunch");
+// Get Scene objects
+//==============================================================================
+const instructionPlane = Scene.root.find('instructionLabel');
+const promptRectangle = Scene.root.find('instructionPrompt');
+const scoreContainer = Scene.root.find('scoreContainer');
+const bestScoreContainer = Scene.root.find('bestContainer');
+const scoreZone = Scene.root.find('scoreZone');
+
+const personaje = Scene.root.find('personaje');
 
 
-// const goal = Scene.root.find("carrot");
-const emmiterFail = Scene.root.find("emmiter_fail");
-const instructionsView = Scene.root.find("instructions_view");
-const congratsView = Scene.root.find("congrats_view");
-const UIGroup = Scene.root.find("UI");
+const planes = [
+    Scene.root.find('plane0'),
+    Scene.root.find('plane1'),
+    Scene.root.find('plane2'),
+    Scene.root.find('plane3'),
+    Scene.root.find('plane4'),
+    Scene.root.find('plane5')
+];
 
-// Sounds
-const jumpSound = Audio.getPlaybackController("jump");
-const dropSound = Audio.getPlaybackController("drop");
-const failSound = Audio.getPlaybackController("fail");
-const completeSound = Audio.getPlaybackController("complete");
-const clickSound = Audio.getPlaybackController("click");
-const switchSound = Audio.getPlaybackController("switch");
-const spikesSound = Audio.getPlaybackController("spikes_off");
-const removeSound = Audio.getPlaybackController("remove");
-const popSound = Audio.getPlaybackController("pop");
+const scoreDigits = [
+    Scene.root.find('digit2'), // 100s place
+    Scene.root.find('digit3'), // 1,000s place
+    Scene.root.find('digit4') // 10,000s place
+];
 
-// Game constants
-const levels = require("./levels");
-const gridSize = 0.36;
-const gridInc = 0.12;
-const numOfSwitches = 2;
-const numOfBlocks = 10;
-const numOfPlatforms = 10;
-const blockSlotInc = 0.1;
-const blockInitY = 0.9;
-const initBlockSlot = 0.6;
-const playerInitY = 0.02;
-const states = { start: 1, running: 2, complete: 3, failed: 4, uncomplete: 5 };
+const bestScoreDigits = [
+    Scene.root.find('digit7'), // 100s place
+    Scene.root.find('digit8'), // 1,000s place
+    Scene.root.find('digit9') // 10,000s place
+];
 
-// Game variables
-let currentLevel = 0;
-let commands = [];
-let executionCommands = [];
-let switchesAdded = [];
-let blocksUsed = 0;
-let platformsUsed = 0;
-let switchesUsed = 0;
-let nextBlockSlot = initBlockSlot;
-let currentState = states.start;
-let playerDir = levels[currentLevel].facing;
-let loopIterations = 2;
-let exeIntervalID;
-let obstacleActivated = true;
-let loopAdded = false;
-let endLoopAdded = false;
-let obstacleRemoved = false;
-let activateLoopFunctionality = false;
-let isFirstRun = true;
-let allCoordinates = createAllCoordinates();
-let pathCoordinates = createPathCoordinates();
-let dangerCoordinates = createDangerCoordinates();
+const xErrors = [
+    Scene.root.find('error0'),
+    Scene.root.find('error1'),
+    Scene.root.find('error2'),
+    Scene.root.find('error3'),
+    Scene.root.find('error4')
+]
 
-CameraInfo.captureDevicePosition
-  .monitor({ fireOnInitialValue: true })
-  .subscribe(function(e) {
-    if (e.newValue === "FRONT") {
-      Instruction.bind(true, "switch_camera_view_to_place");
-    } else {
-      Instruction.bind(false, "switch_camera_view_to_place");
-      Instruction.bind(true, "effect_include_sound");
-    }
-  });
+// Get materials
+//==============================================================================
+// not necessary for this effect since we can access our Scene Object's materials directly
 
-Time.setTimeout(function() {
-  Instruction.bind(false, "effect_include_sound");
-}, 5000);
+// Get textures
+//==============================================================================
+const promptTex = [
+    Textures.get('prompts-01'), // blank/none
+    Textures.get('prompts-02'), // lookLeft
+    Textures.get('prompts-03'), // openMouth
+    Textures.get('prompts-04'), // blink
+    Textures.get('prompts-05') // lookRight
+];
 
-/*------------- Button Taps -------------*/
+const scoreTex = [
+    Textures.get('scoreFull'), // score indicator
+    Textures.get('scoreDefault') // idle
+];
 
-for (let i = 0; i < 9; i++) {
-  let button = buttons.child("btn" + i);
-  TouchGestures.onTap(button).subscribe(function() {
-    switch (i) {
-      case 0:
-        addCommand("forward");
-        break;
-      case 1:
-        addCommand("left");
-        break;
-      case 2:
-        addCommand("right");
-        break;
-      case 3:
-        if (!loopAdded && activateLoopFunctionality === true) {
-          loopAdded = true;
-          loopIterations = 2;
-          addCommand("loop_2");
-          setTexture(commands[findCommandIndex("loop_")].block, "loop_2_block");
-          setTexture(buttons.child("btn3"), "loop_off");
-        }
-        break;
-      case 4:
-        if (!endLoopAdded && activateLoopFunctionality === true) {
-          endLoopAdded = true;
-          addCommand("end_loop");
-          setTexture(buttons.child("btn4"), "end_loop_off");
-        }
-        break;
-      case 5:
-        setLoopIterations(2);
-        break;
-      case 6:
-        setLoopIterations(3);
-        break;
-      case 7:
-        setLoopIterations(4);
-        break;
-      case 8:
-        // Call a different function based on current game state
-        clickSound.setPlaying(true);
-        clickSound.reset();
-        switch (currentState) {
-          case states.start:
-            Time.setTimeout(function() {
-              if (commands.length !== 0) executeCommands();
-            }, 300);
-            break;
-          case states.failed:
-            resetLevel();
-            break;
-          case states.uncomplete:
-            resetLevel();
-            break;
-          case states.complete:
-            nextLevel("next");
-            break;
-        }
-        break;
-    }
-  });
-}
-TouchGestures.onTap(blocks.child("btn9")).subscribe(function() {
-  // Remove the last command
-  removeSound.setPlaying(true);
-  removeSound.reset();
-  if (blocksUsed !== 0 && currentState === states.start) {
-    let popped = commands.pop();
-    popped.block.transform.y = blockInitY;
-    popped.block.hidden = true;
-    nextBlockSlot += blockSlotInc;
-    blocksUsed--;
-    if (popped.command.search("loop_") !== -1) {
-      loopAdded = false;
-      setTexture(buttons.child("btn3"), "loop");
-    } else if (popped.command === "end_loop") {
-      endLoopAdded = false;
-      setTexture(buttons.child("btn4"), "end_loop");
-    }
-  }
-});
+const digitTex = [
+    Textures.get('digit0'), // 0
+    Textures.get('digit1'), // 1
+    Textures.get('digit2'), // 2
+    Textures.get('digit3'), // 3
+    Textures.get('digit4'), // 4
+    Textures.get('digit5'), // 5
+    Textures.get('digit6'), // 6
+    Textures.get('digit7'), // 7
+    Textures.get('digit8'), // 8
+    Textures.get('digit9') // 9
+];
 
-TouchGestures.onTap(congratsView).subscribe(function() {
-  isFirstRun = false;
-  nextLevel("back");
-});
+// Setup gestures
+//==============================================================================
 
-/*------------- Monitor Player Position -------------*/
+// Define gesture types
+const types = [
+    null,
+    'lookLeft',
+    'openMouth',
+    'blink',
+    'lookRight'
+];
 
-Reactive.monitorMany({
-  x: player.transform.x,
-  z: player.transform.z
-}).subscribe(({ newValues }) => {
-  let playerX = newValues.x;
-  let playerZ = newValues.z;
-  let goalX = pathCoordinates[pathCoordinates.length - 1][0];
-  let goalZ = pathCoordinates[pathCoordinates.length - 1][1];
-  let obstacleCoords = levels[currentLevel].obstacle;
-  let collisionArea = 0.005;
-  let maxBlocks = levels[currentLevel].blocks;
+// Handle gestures from patch editor
+Patches.getPulseValue('blinkGesture').subscribe(function(e) { gestureHandler('blink') });
+Patches.getPulseValue('lookLeftGesture').subscribe(function(e) { gestureHandler('lookLeft') });
+Patches.getPulseValue('lookRightGesture').subscribe(function(e) { gestureHandler('lookRight') });
+Patches.getPulseValue('openMouthGesture').subscribe(function(e) { gestureHandler('openMouth') });
 
-  // Check if player is on the goal
-  if (
-    isBetween(playerX, goalX + collisionArea, goalX - collisionArea) &&
-    isBetween(playerZ, goalZ + collisionArea, goalZ - collisionArea)
-  ) {
-    player.transform.x = goalX;
-    player.transform.z = goalZ;
-    commands = [];
-    executionCommands = [];
-    Time.clearInterval(exeIntervalID);
-    changeState(states.complete, "next");
-    goal.hidden = true;
-    animateLevelComplete();
-    completeSound.setPlaying(true);
-    completeSound.reset();
+const currentPosition = Patches.getScalarValue('posicion');
 
-    if (currentLevel === 9) {
-      animateUIGroup();
-    }
 
-    if (currentLevel === 0) {
-      animateInstructionsViewHide();
-    } else if (currentLevel === 3) {
-      animateInstructionsViewHide();
-    } else if (currentLevel === 5) {
-      animateInstructionsViewHide();
-    }
 
-    if (blocksUsed > maxBlocks) {
-      Diagnostics.log("You can also solve this with " + maxBlocks + " blocks.");
-    }
-  }
-
-  // Check if player is on a danger zone
-  for (let i = 0; i < dangerCoordinates.length; i++) {
-    let dx = dangerCoordinates[i][0];
-    let dz = dangerCoordinates[i][1];
-    if (
-      isBetween(playerX, dx + collisionArea, dx - collisionArea) &&
-      isBetween(playerZ, dz + collisionArea, dz - collisionArea)
-    ) {
-      player.transform.x = dx;
-      player.transform.z = dz;
-      commands = [];
-      executionCommands = [];
-      Time.clearInterval(exeIntervalID);
-      changeState(states.failed, "retry");
-      animatePlayerFall();
-      dropSound.setPlaying(true);
-      dropSound.reset();
-    }
-  }
-
-  if ("obstacle" in levels[currentLevel]) {
-    // Check if player is on an obstacle
-    let obstacleX = pathCoordinates[obstacleCoords][0];
-    let obstacleZ = pathCoordinates[obstacleCoords][1];
-
-    if (
-      isBetween(
-        playerX,
-        obstacleX + collisionArea,
-        obstacleX - collisionArea
-      ) &&
-      isBetween(
-        playerZ,
-        obstacleZ + collisionArea,
-        obstacleZ - collisionArea
-      ) &&
-      obstacleActivated
-    ) {
-      player.transform.x = obstacleX;
-      player.transform.z = obstacleZ;
-      commands = [];
-      executionCommands = [];
-      Time.clearInterval(exeIntervalID);
-      changeState(states.failed, "retry");
-      animatePlayerSpikeDeath();
-      failSound.setPlaying(true);
-      failSound.reset();
-    }
-
-    // Check if player is on a switch
-    let switchCoords = levels[currentLevel].switches;
-    for (let i = 0; i < switchCoords.length; i++) {
-      let sx = pathCoordinates[switchCoords[i]][0];
-      let sz = pathCoordinates[switchCoords[i]][1];
-      if (
-        isBetween(playerX, sx + collisionArea, sx - collisionArea) &&
-        isBetween(playerZ, sz + collisionArea, sz - collisionArea)
-      ) {
-        switchesAdded[i].activated = true;
-        let s = switches.child("switch" + i);
-        s.child("button").child("knob").transform.z = 0;
-        player.transform.y = playerInitY + 0.015;
-        if (
-          s
-            .child("button")
-            .child("knob")
-            .transform.z.pinLastValue() !== 0
-        ) {
-          switchSound.setPlaying(true);
-          switchSound.reset();
-        }
-      }
-    }
-
-    // Remove obstacle if all switches are deactivated
-    if (switchesAdded.every(val => val.activated === true)) {
-      obstacleActivated = false;
-      if (!obstacleRemoved) {
-        obstacleRemoved = true;
-        animateSpikes();
-        Time.setTimeout(function() {
-          spikesSound.setPlaying(true);
-          spikesSound.reset();
-        }, 100);
-      }
-    }
-  }
-});
-
-/*------------- Create Level Coordinates -------------*/
-
-function createAllCoordinates() {
-  // Creates a 7 x 7 grid of coordinates
-  let coords = [];
-  for (let i = -gridSize; i <= gridSize; i += gridInc) {
-    for (let j = -gridSize; j <= gridSize; j += gridInc) {
-      let x = Math.round(i * 1e4) / 1e4;
-      let z = Math.round(j * 1e4) / 1e4;
-      coords.push([x, z]);
-    }
-  }
-  return coords;
+// Setup audio script-patch bridge
+//==============================================================================
+function playAudio(audio) {
+    Patches.setPulseValue(audio, R.once());
 }
 
-function createPathCoordinates() {
-  // Get the current level path coordinates from all the coordinates
-  let path = levels[currentLevel].path;
-  let coords = [];
-  for (let i = 0; i < path.length; i++) {
-    let x = allCoordinates[path[i][0]][1];
-    let z = allCoordinates[path[i][1]][1];
-    coords.push([x, z]);
-  }
-  return coords;
-}
+// Setup animations
+//==============================================================================
+// Main loop
+const duration = 5000;
+const drivers = [
+    Animation.timeDriver({durationMilliseconds: duration, loopCount: Infinity, mirror: false}),
+    Animation.timeDriver({durationMilliseconds: duration, loopCount: Infinity, mirror: false}),
+    Animation.timeDriver({durationMilliseconds: duration, loopCount: Infinity, mirror: false}),
+    Animation.timeDriver({durationMilliseconds: duration, loopCount: Infinity, mirror: false}),
+    Animation.timeDriver({durationMilliseconds: duration, loopCount: Infinity, mirror: false}),
+    Animation.timeDriver({durationMilliseconds: duration, loopCount: Infinity, mirror: false})
+];
+const sampler = Animation.samplers.linear(0, 1);
+const offsets = drivers.map(function(driver) { return Animation.animate(driver, sampler) });
 
-function createDangerCoordinates() {
-  // Get the danger coordinates by removing the current path coordinates
-  let coords = allCoordinates;
-  for (let i = 0; i < pathCoordinates.length; i++) {
-    for (let j = 0; j < coords.length; j++) {
-      let lvlCoordStr = JSON.stringify(pathCoordinates[i]);
-      let genCoordStr = JSON.stringify(coords[j]);
-      if (lvlCoordStr === genCoordStr) {
-        coords.splice(j, 1);
-      }
-    }
-  }
-  return coords;
-}
+// Fade out animation
+const fadeOutDriver = Animation.timeDriver({durationMilliseconds: duration/6, loopCount: 1, mirror: false});
+const fadeSampler = Animation.samplers.linear(1, 0);
+const fadeOut = Animation.animate(fadeOutDriver, fadeSampler);
 
-/*------------- Initialize current level -------------*/
-
-function initLevel() {
-  playerDir = levels[currentLevel].facing;
-
-  // Set the player's initial position
-  player.transform.x = pathCoordinates[0][0];
-  player.transform.z = pathCoordinates[0][1];
-  player.transform.y = playerInitY;
-
-  // set goal position
-  let goalX = pathCoordinates[pathCoordinates.length - 1][0];
-  let goalZ = pathCoordinates[pathCoordinates.length - 1][1];
-  goal.transform.x = goalX;
-  goal.transform.z = goalZ;
-  goal.transform.y = 0.03;
-  goal.hidden = false;
-
-  // Set the player's initial direction
-  if (playerDir === "east") {
-    player.transform.rotationY = 0;
-  } else if (playerDir === "north") {
-    player.transform.rotationY = degreesToRadians(90);
-  } else if (playerDir === "west") {
-    player.transform.rotationY = degreesToRadians(180);
-  } else if (playerDir === "south") {
-    player.transform.rotationY = degreesToRadians(270);
-  }
-
-  // Add the path platforms
-  for (let i = 0; i < pathCoordinates.length; i++) {
-    let path = pathCoordinates[i];
-    let x = path[0];
-    let z = path[1];
-    let platform = platforms.child("platform" + platformsUsed++);
-    platform.transform.x = x;
-    platform.transform.z = z;
-    platform.hidden = false;
-  }
-
-  if ("obstacle" in levels[currentLevel]) {
-    // Add the obstacle
-    let obstacleCoords = levels[currentLevel].obstacle;
-    obstacle.transform.x = pathCoordinates[obstacleCoords][0];
-    obstacle.transform.z = pathCoordinates[obstacleCoords][1];
-    obstacle.transform.y = 0.03;
-    obstacle.hidden = false;
-
-    // Add the switches
-    let switchCoords = levels[currentLevel].switches;
-    for (let i = 0; i < switchCoords.length; i++) {
-      let s = switches.child("switch" + switchesUsed++);
-      s.transform.x = pathCoordinates[switchCoords[i]][0];
-      s.transform.z = pathCoordinates[switchCoords[i]][1];
-      s.transform.y = 0.03;
-      switchesAdded.push({ switch: "switch" + switchesUsed, activated: false });
-      s.hidden = false;
-    }
-  }
-
-  if (currentLevel > 4) {
-    activateLoopFunctionality = true;
-    setTexture(buttons.child("btn3"), "loop");
-    setTexture(buttons.child("btn4"), "end_loop");
-    setTexture(buttons.child("btn5"), "loop_2");
-    setTexture(buttons.child("btn6"), "loop_3");
-    setTexture(buttons.child("btn7"), "loop_4");
-  }
-
-  Time.setTimeout(function() {
-    if (currentLevel === 0) {
-      setTexture(instructionsView, "in_0");
-      if (!isFirstRun) {
-        animateInstructionsViewShow();
-      }
-    } else if (currentLevel === 3) {
-      setTexture(instructionsView, "in_1");
-      animateInstructionsViewShow();
-    } else if (currentLevel === 5) {
-      setTexture(instructionsView, "in_2");
-      animateInstructionsViewShow();
-    }
-  }, 1000);
-}
-
-initLevel();
-
-/*------------- Add Command -------------*/
-
-function addCommand(move) {
-  if (currentState === states.start) {
-    if (blocksUsed < numOfBlocks) {
-      let block = blocks.child("block" + blocksUsed++);
-      nextBlockSlot -= blockSlotInc;
-      block.transform.y = nextBlockSlot;
-      block.material = Materials.get(move + "_block_mat");
-      block.hidden = false;
-      commands.push({ command: move, block: block });
-      clickSound.setPlaying(true);
-      clickSound.reset();
-    }
-  }
-}
-
-/*------------- Execution functions -------------*/
-
-function executeCommands() {
-  currentState = states.running;
-  let loopIndex = findCommandIndex("loop_");
-  let endIndex = findCommandIndex("end_loop");
-
-  if (loopIndex != undefined && endIndex != undefined) {
-    if (endIndex < loopIndex) {
-      //TODO: handle this visually later
-      Diagnostics.log("loop block must go before the end loop block");
-      currentState = states.start;
-    } else {
-      executionCommands = getLoopCommands(loopIndex, endIndex);
-    }
-  } else if (loopIndex != undefined && endIndex == undefined) {
-    //TODO: handle this visually later
-    Diagnostics.log("please end the loop");
-    currentState = states.start;
-  } else if (loopIndex == undefined && endIndex != undefined) {
-    //TODO: handle this visually later
-    Diagnostics.log("loop block not added");
-    currentState = states.start;
-  } else if (loopIndex == undefined && endIndex == undefined) {
-    executionCommands = getNonLoopCommands();
-  }
-
-  setExecutionInterval(
-    function(e) {
-      animatePlayerMovement(executionCommands[e]);
+// Setup instructions
+//==============================================================================
+const instructions = [
+    {
+        type: 'lookLeft',
+        tex: Textures.get('labelLookLeft'),
+        prompt: promptTex[1]
     },
-    1000,
-    executionCommands.length
-  );
-}
-
-function setExecutionInterval(callback, delay, repetitions) {
-  let e = 0;
-  callback(0);
-  exeIntervalID = Time.setInterval(function() {
-    callback(e + 1);
-    if (++e === repetitions) {
-      Time.clearInterval(exeIntervalID);
-      if (currentState === states.running) currentState = states.uncomplete;
-      setTexture(buttons.child("btn8"), "retry");
-      failSound.setPlaying(true);
-      failSound.reset();
+    {
+        type: 'openMouth',
+        tex: Textures.get('labelOpenMouth'),
+        prompt: promptTex[2]
+    },
+    {
+        type: 'blink',
+        tex: Textures.get('labelBlink'),
+        prompt: promptTex[3]
+    },
+    {
+        type: 'lookRight',
+        tex: Textures.get('labelLookRight'),
+        prompt: promptTex[4]
     }
-  }, delay);
-}
+];
+var currInstruction = 0;
 
-function getLoopCommands(loopIndex, endIndex) {
-  let commandsToLoop = [];
-  let dupCommands = [];
-  let unDuplicatedLoop = [];
-  let nonLoopCommands = getNonLoopCommands();
+// Setup game 
+//==============================================================================
+// Create the move order for the game. 0 is null/nothing, 1 is lookLeft, etc.
+const promptOrder = [1, 2, 3, 4, 0, 4, 3, 2, 1, 1, 1, 2, 4, 4, 3, 4, 3, 0, 2, 0];
+// const promptOrder = Array.from({ length: 1000 }, function() { return Math.floor(Math.random()*types.length) });
+// Track current move type and plane
+var currMove = null;
+var currPlane = 0;
+// Track if user has already attempted the current prompt to avoid double scoring
+var promptAttempted = false;
+// Create logic for each loop to set new textures and track prompt misses
+drivers.forEach(function(driver, i) {
+    driver.onAfterIteration().subscribe(function(loopCount) {
+        // check if prompt was missed
+        if (currMove != null && !promptAttempted && !gameOver) {
+            playAudio('playBadAudio');
+            incrementScore(-100);
+            xErrors[numErrors].hidden = false;
+            numErrors++;
+            if (numErrors >= xErrors.length) endGame();
+        }
+        promptAttempted = false;
+        // track which plane is currently in the score zone
+        currPlane = (i + 2) % planes.length;
+        // set current move type to check gestures against
+        currMove = types[promptOrder[((loopCount - 1)*planes.length + i + 2) % promptOrder.length]];
+        // update the plane texture as it resets to the top
+        const moveIndex = (loopCount*planes.length + i) % promptOrder.length;
+        planes[i].material.diffuse = promptTex[promptOrder[moveIndex]];
+    });
+});
 
-  // get loop commands
-  for (let i = loopIndex; i < endIndex; i++) {
-    commandsToLoop.push(commands[i].command);
-  }
-  commandsToLoop.shift();
-  if (commandsToLoop.length === 0) {
-    for (let i = 1; i >= 0; i--)
-      nonLoopCommands.splice([loopIndex, endIndex][i], 1);
+// Animate planes
+planes.forEach(function(plane, i) {
+    // set position
+    plane.y = offsets[i].mul(-0.6).sub(0.09375);
+    // set initial texture
+    plane.material.diffuse = promptTex[promptOrder[i]];
+    // set fade in/out
+    plane.material.opacity = R.clamp(R.val(3).sub(offsets[i].mul(6).sub(3).abs()), 0, 1);
+});
 
-    if (nonLoopCommands.length === 0) {
-      Diagnostics.log("loop is empty");
-      currentState = states.start;
+// Track score
+var score = 0;
+function incrementScore(amount) {
+    score += amount;
+    // No negative scores
+    if (score < 0) score = 0;
+    // If we hit the max amount (100,000), end game
+    if (score >= 99999) {
+        score = 99999;
+        endGame();
     }
+    // split up number so we can assign each digit
+    var tempArr = [0, 0, 0, 0, 0];
+    score.toString().split('').reverse().forEach(function(digit, i) {tempArr[i] = digit});
+    scoreDigits[0].material.diffuse = digitTex[tempArr[2]]; // assign 100s
+    scoreDigits[1].material.diffuse = digitTex[tempArr[3]]; // assign 1,000s
+    scoreDigits[2].material.diffuse = digitTex[tempArr[4]]; // assign 10,000s
+}
 
-    return nonLoopCommands;
-  } else {
-    // duplicate loop commands
-    for (let i = 0; i < loopIterations; i++) {
-      for (let j = 0; j < commandsToLoop.length; j++) {
-        dupCommands.push(commandsToLoop[j]);
-      }
+// Start game
+//==============================================================================
+var gameStarted = false;
+function startGame() {
+    // hide instruction-related content
+    instructionPlane.hidden = true;
+    promptRectangle.hidden = true;
+    // show score
+    scoreContainer.hidden = false;
+    // start, stagger animations
+    gameStarted = true;
+    drivers.forEach(function(driver, i) {
+        Time.setTimeout(function() { driver.start() }, duration*i/6);
+    });
+    // start tracking moves when first plane hits the score zone
+    Time.setTimeout(function() {
+        currMove = types[promptOrder[0]];
+        Time.setTimeout(function() {
+            promptAttempted = false;
+            currMove = types[promptOrder[1]];
+            currPlane = 1;
+        }, duration/6);
+    }, duration*4/6);
+}
+
+
+// Play game
+//==============================================================================
+
+var numErrors = 0;
+
+
+
+
+function gestureHandler(type) {
+    // If in instruction phase
+    if (!gameStarted) {
+        // check if player does the correct gesture
+        if (type == instructions[currInstruction].type) {
+            currInstruction++;
+            // if instructions aren't done yet, go to next instruction
+            if (currInstruction < instructions.length) {
+                instructionPlane.material.diffuse = instructions[currInstruction].tex;
+                promptRectangle.material.diffuse = instructions[currInstruction].prompt;
+            }
+            else startGame();
+        }
     }
-    // merge loop commands
-    for (let i = loopIndex; i < endIndex + 1; i++) {
-      unDuplicatedLoop.push(nonLoopCommands[i]);
+    // If playing game
+    else if (!gameOver) {
+        // If player has already attempted prompt, do nothing
+        if (promptAttempted) return;
+        
+        // If player does the correct move
+        if (type == currMove) {
+            promptAttempted = true;
+            // Track how close the prompt is to the middle of the target zone
+            const grade = offsets[currPlane].pinLastValue();
+            Diagnostics.log(grade);
+            Diagnostics.log(currentPosition.pinLastValue());
+         
+            Diagnostics.log('paso por grade');
+            // If not quite in the middle, add 100 points (OK)
+            if (grade <= 0.725 || grade >= 0.775) incrementScore(100);
+            // If in the middle, add 200 points (PERFECT)
+            else incrementScore(200);
+            // Indicate positive
+            scoreZone.material.diffuse = scoreTex[0];
+            Time.setTimeout(function() {scoreZone.material.diffuse = scoreTex[1]}, duration/15);
+            playAudio('playGoodAudio');
+        }
+        // If player does the wrong move (ignore blinking)
+        else if (type != currMove && type != 'blink') {
+            promptAttempted = true;
+            playAudio('playBadAudio');
+            incrementScore(-100); // deduct 100 points (BAD)
+            // Show error element, check if player has lost
+            xErrors[numErrors].hidden = false;
+            numErrors++;
+            if (numErrors >= xErrors.length) endGame();
+        }
     }
-    nonLoopCommands.splice(loopIndex, unDuplicatedLoop.length, dupCommands);
-    let merged = [].concat.apply([], nonLoopCommands);
-    return merged;
-  }
 }
 
-function getNonLoopCommands() {
-  let nonLoopCommands = [];
-  for (let i = 0; i < commands.length; i++) {
-    nonLoopCommands.push(commands[i].command);
-  }
-  return nonLoopCommands;
+// End game (win or lose)
+//==============================================================================
+var gameOver = false;
+function endGame() {
+    // Indicate game over, clean up
+    Diagnostics.log('game over');
+    playAudio('playEndAudio');
+    gameOver = true;
+    planes.forEach(function(plane) {
+        plane.material.opacity = fadeOut;
+    });
+    scoreZone.material.opacity = fadeOut.mul(0.6);
+    fadeOutDriver.onCompleted().subscribe(function() {
+        drivers.forEach(function(driver) {driver.stop()});
+        xErrors.forEach(function(x) {x.hidden = true});
+        bestScoreContainer.hidden = false;
+    });
+    fadeOutDriver.start();
+    // Save score if high score
+    if (score > highScore) saveHighScore();
 }
 
-/*------------- Animations -------------*/
-
-function animatePlayerMovement(command) {
-  const timeDriverParameters = {
-    durationMilliseconds: 400,
-    loopCount: 1,
-    mirror: false
-  };
-
-  const timeDriver = Animation.timeDriver(timeDriverParameters);
-  const translationNegX = Animation.animate(
-    timeDriver,
-    Animation.samplers.linear(
-      player.transform.x.pinLastValue(),
-      player.transform.x.pinLastValue() - gridInc
-    )
-  );
-
-  const translationPosX = Animation.animate(
-    timeDriver,
-    Animation.samplers.linear(
-      player.transform.x.pinLastValue(),
-      player.transform.x.pinLastValue() + gridInc
-    )
-  );
-
-  const translationNegZ = Animation.animate(
-    timeDriver,
-    Animation.samplers.linear(
-      player.transform.z.pinLastValue(),
-      player.transform.z.pinLastValue() - gridInc
-    )
-  );
-
-  const translationPosZ = Animation.animate(
-    timeDriver,
-    Animation.samplers.linear(
-      player.transform.z.pinLastValue(),
-      player.transform.z.pinLastValue() + gridInc
-    )
-  );
-
-  const rotationLeft = Animation.animate(
-    timeDriver,
-    Animation.samplers.linear(
-      player.transform.rotationY.pinLastValue(),
-      player.transform.rotationY.pinLastValue() + degreesToRadians(90)
-    )
-  );
-
-  const rotationRight = Animation.animate(
-    timeDriver,
-    Animation.samplers.linear(
-      player.transform.rotationY.pinLastValue(),
-      player.transform.rotationY.pinLastValue() - degreesToRadians(90)
-    )
-  );
-
-  const jump = Animation.animate(
-    timeDriver,
-    Animation.samplers.sequence({
-      samplers: [
-        Animation.samplers.easeInOutSine(playerInitY, 0.1),
-        Animation.samplers.easeInOutSine(0.1, playerInitY)
-      ],
-      knots: [0, 1, 2]
+// Persistence Module - save/retrieve high scores
+//==============================================================================
+// Get stored high score from user's device (if it exists)
+var highScore = 0;
+const userScope = Persistence.userScope;
+userScope.get('DDR_high_score')
+    .then(function(data) {
+        highScore = data.score;
+        var tempArr = [0, 0, 0, 0, 0];
+        highScore.toString().split('').reverse().forEach(function(digit, i) {tempArr[i] = digit});
+        bestScoreDigits[0].material.diffuse = digitTex[tempArr[2]]; // assign 100s
+        bestScoreDigits[1].material.diffuse = digitTex[tempArr[3]]; // assign 1,000s
+        bestScoreDigits[2].material.diffuse = digitTex[tempArr[4]]; // assign 10,000s
     })
-  );
-
-  timeDriver.start();
-
-  switch (command) {
-    case "forward":
-      player.transform.y = jump;
-      jumpSound.setPlaying(true);
-      jumpSound.reset();
-      if (playerDir === "east") {
-        player.transform.x = translationPosX;
-      } else if (playerDir === "north") {
-        player.transform.z = translationNegZ;
-      } else if (playerDir === "west") {
-        player.transform.x = translationNegX;
-      } else if (playerDir === "south") {
-        player.transform.z = translationPosZ;
-      }
-      break;
-    case "left":
-      if (playerDir === "east") {
-        playerDir = "north";
-      } else if (playerDir === "north") {
-        playerDir = "west";
-      } else if (playerDir === "west") {
-        playerDir = "south";
-      } else if (playerDir === "south") {
-        playerDir = "east";
-      }
-      player.transform.rotationY = rotationLeft;
-      break;
-    case "right":
-      if (playerDir === "east") {
-        playerDir = "south";
-      } else if (playerDir === "south") {
-        playerDir = "west";
-      } else if (playerDir === "west") {
-        playerDir = "north";
-      } else if (playerDir === "north") {
-        playerDir = "east";
-      }
-      player.transform.rotationY = rotationRight;
-      break;
-  }
-}
-
-function animatePlayerIdle() {
-  const timeDriverParameters = {
-    durationMilliseconds: 400,
-    loopCount: Infinity,
-    mirror: true
-  };
-  const timeDriver = Animation.timeDriver(timeDriverParameters);
-
-  const scale = Animation.animate(
-    timeDriver,
-    Animation.samplers.linear(
-      player.transform.scaleY.pinLastValue(),
-      player.transform.scaleY.pinLastValue() + 0.02
-    )
-  );
-
-  player.transform.scaleY = scale;
-
-  timeDriver.start();
-}
-
-animatePlayerIdle();
-
-function animateLevelComplete() {
-  const timeDriverParameters = {
-    durationMilliseconds: 450,
-    loopCount: 2,
-    mirror: false
-  };
-
-  const timeDriver = Animation.timeDriver(timeDriverParameters);
-
-  const jump = Animation.animate(
-    timeDriver,
-    Animation.samplers.sequence({
-      samplers: [
-        Animation.samplers.easeInOutSine(playerInitY, 0.1),
-        Animation.samplers.easeInOutSine(0.1, playerInitY)
-      ],
-      knots: [0, 1, 2]
-    })
-  );
-
-  player.transform.y = jump;
-
-  timeDriver.start();
-}
-
-function animateCarrot() {
-  const timeDriverParameters = {
-    durationMilliseconds: 2500,
-    loopCount: Infinity,
-    mirror: false
-  };
-
-  const timeDriver = Animation.timeDriver(timeDriverParameters);
-
-  const rotate = Animation.animate(
-    timeDriver,
-    Animation.samplers.linear(
-      goal.transform.rotationY.pinLastValue(),
-      goal.transform.rotationY.pinLastValue() - degreesToRadians(360)
-    )
-  );
-
-  goal.transform.rotationY = rotate;
-
-  timeDriver.start();
-}
-
-animateCarrot();
-
-function emmitWaterParticles() {
-  const sizeSampler = Animation.samplers.easeInQuad(0.015, 0.007);
-  waterEmitter.transform.x = player.transform.x;
-  waterEmitter.transform.z = player.transform.z;
-  waterEmitter.birthrate = 500;
-  waterEmitter.sizeModifier = sizeSampler;
-
-  Time.setTimeout(function() {
-    player.hidden = true;
-    waterEmitter.birthrate = 0;
-  }, 200);
-}
-
-function animatePlayerFall() {
-  emmitWaterParticles();
-  const timeDriverParameters = {
-    durationMilliseconds: 100,
-    loopCount: 1,
-    mirror: false
-  };
-
-  const timeDriver = Animation.timeDriver(timeDriverParameters);
-
-  const moveY = Animation.animate(
-    timeDriver,
-    Animation.samplers.easeInOutSine(playerInitY - 0.1, -0.17)
-  );
-
-  player.transform.y = moveY;
-
-  timeDriver.start();
-
-  Time.setTimeout(function() {
-    player.hidden = true;
-  }, 200);
-}
-
-function animatePlayerSpikeDeath() {
-  const timeDriverParameters = {
-    durationMilliseconds: 500,
-    loopCount: 1,
-    mirror: false
-  };
-
-  const timeDriver = Animation.timeDriver(timeDriverParameters);
-
-  const deadY = Animation.animate(
-    timeDriver,
-    Animation.samplers.sequence({
-      samplers: [
-        Animation.samplers.easeInOutSine(
-          player.transform.y.pinLastValue(),
-          player.transform.y.pinLastValue() + 0.1
-        ),
-        Animation.samplers.easeInOutSine(
-          player.transform.y.pinLastValue() + 0.1,
-          playerInitY - 0.17
-        )
-      ],
-      knots: [0, 1, 2]
-    })
-  );
-
-  player.transform.y = deadY;
-
-  timeDriver.start();
-
-  Time.setTimeout(function() {
-    player.hidden = true;
-  }, 600);
-}
-
-function animateSpikes() {
-  const timeDriverParameters = {
-    durationMilliseconds: 400,
-    loopCount: 1,
-    mirror: false
-  };
-
-  const timeDriver = Animation.timeDriver(timeDriverParameters);
-
-  const moveY = Animation.animate(
-    timeDriver,
-    Animation.samplers.linear(obstacle.transform.y.pinLastValue(), -0.03)
-  );
-
-  obstacle.transform.y = moveY;
-
-  timeDriver.start();
-}
-
-function animateUIGroup() {
-  const timeDriverParameters = {
-    durationMilliseconds: 600,
-    loopCount: 1,
-    mirror: false
-  };
-
-  const timeDriver = Animation.timeDriver(timeDriverParameters);
-
-  const scaleUI = Animation.animate(
-    timeDriver,
-    Animation.samplers.sequence({
-      samplers: [
-        Animation.samplers.easeInOutSine(0.3, 0.45),
-        Animation.samplers.easeInOutSine(0.45, 0)
-      ],
-      knots: [0, 1, 2]
-    })
-  );
-
-  UIGroup.transform.scaleX = scaleUI;
-  UIGroup.transform.scaleY = scaleUI;
-
-  timeDriver.start();
-
-  Time.setTimeout(function() {
-    animateCongrats();
-  }, 700);
-}
-
-function animateCongrats() {
-  popSound.setPlaying(true);
-  popSound.reset();
-  const timeDriverParameters = {
-    durationMilliseconds: 200,
-    loopCount: 1,
-    mirror: false
-  };
-
-  const timeDriver = Animation.timeDriver(timeDriverParameters);
-
-  const scaleX = Animation.animate(
-    timeDriver,
-    Animation.samplers.sequence({
-      samplers: [
-        Animation.samplers.easeInOutSine(0, 4 + 1),
-        Animation.samplers.easeInOutSine(4 + 1, 4)
-      ],
-      knots: [0, 1, 2]
-    })
-  );
-
-  const scaleY = Animation.animate(
-    timeDriver,
-    Animation.samplers.sequence({
-      samplers: [
-        Animation.samplers.easeInOutSine(0, 2.8 + 1),
-        Animation.samplers.easeInOutSine(2.8 + 1, 2.8)
-      ],
-      knots: [0, 1, 2]
-    })
-  );
-
-  congratsView.transform.scaleX = scaleX;
-  congratsView.transform.scaleY = scaleY;
-
-  timeDriver.start();
-}
-
-function animateInstructionsViewHide() {
-  const timeDriverParameters = {
-    durationMilliseconds: 200,
-    loopCount: 1,
-    mirror: false
-  };
-
-  const timeDriver = Animation.timeDriver(timeDriverParameters);
-
-  const scale = Animation.animate(
-    timeDriver,
-    Animation.samplers.sequence({
-      samplers: [
-        Animation.samplers.easeInOutSine(10, 10 + 2),
-        Animation.samplers.easeInOutSine(10 + 2, 0)
-      ],
-      knots: [0, 1, 2]
-    })
-  );
-
-  instructionsView.transform.scaleX = scale;
-  instructionsView.transform.scaleY = scale;
-
-  timeDriver.start();
-}
-
-function animateInstructionsViewShow() {
-  popSound.setPlaying(true);
-  popSound.reset();
-  const timeDriverParameters = {
-    durationMilliseconds: 200,
-    loopCount: 1,
-    mirror: false
-  };
-
-  const timeDriver = Animation.timeDriver(timeDriverParameters);
-
-  const scale = Animation.animate(
-    timeDriver,
-    Animation.samplers.sequence({
-      samplers: [
-        Animation.samplers.easeInOutSine(0, 10 + 2),
-        Animation.samplers.easeInOutSine(10 + 2, 10)
-      ],
-      knots: [0, 1, 2]
-    })
-  );
-
-  instructionsView.transform.scaleX = scale;
-  instructionsView.transform.scaleY = scale;
-
-  timeDriver.start();
-}
-
-/*------------- Reset current level -------------*/
-
-function resetLevel() {
-  currentState = states.start;
-  playerDir = levels[currentLevel].facing;
-  commands = [];
-  executionCommands = [];
-  switchesAdded = [];
-  loopIterations = 2;
-  blocksUsed = 0;
-  platformsUsed = 0;
-  switchesUsed = 0;
-  nextBlockSlot = initBlockSlot;
-  obstacleActivated = true;
-  loopAdded = false;
-  endLoopAdded = false;
-  player.hidden = false;
-  obstacleRemoved = false;
-  setTexture(buttons.child("btn8"), "play");
-  Time.clearInterval(exeIntervalID);
-
-  for (let i = 0; i < numOfBlocks; i++) {
-    let block = blocks.child("block" + i);
-    block.transform.y = blockInitY;
-    block.hidden = true;
-  }
-
-  for (let i = 0; i < numOfSwitches; i++) {
-    let s = switches.child("switch" + i);
-    s.child("button").child("knob").transform.z = -0.045;
-  }
-
-  initLevel();
-}
-
-/*------------- Go to next level -------------*/
-
-function nextLevel(state) {
-  if (state === "next") {
-    currentLevel++;
-  } else {
-    currentLevel = 0;
-    congratsView.transform.scaleX = 0;
-    congratsView.transform.scaleY = 0;
-    UIGroup.transform.scaleX = 0.3;
-    UIGroup.transform.scaleY = 0.3;
-    setTexture(buttons.child("btn4"), "end_loop");
-    setTexture(buttons.child("btn3"), "loop");
-  }
-
-  allCoordinates = createAllCoordinates();
-  pathCoordinates = createPathCoordinates();
-  dangerCoordinates = createDangerCoordinates();
-
-  for (let i = 0; i < numOfPlatforms; i++) {
-    let platform = platforms.child("platform" + i);
-    platform.hidden = true;
-  }
-
-  if ("obstacle" in levels[currentLevel] === false) {
-    obstacle.transform.x = 0;
-    obstacle.transform.z = 0;
-    obstacle.hidden = true;
-
-    for (let i = 0; i < numOfSwitches; i++) {
-      let s = switches.child("switch" + i);
-      s.transform.x = 0;
-      s.transform.z = 0;
-      s.hidden = true;
-    }
-  }
-
-  resetLevel();
-}
-
-/*------------- Utils -------------*/
-
-function degreesToRadians(degrees) {
-  let pi = Math.PI;
-  return degrees * (pi / 180);
-}
-
-function isBetween(n, a, b) {
-  return (n - a) * (n - b) <= 0;
-}
-
-function setTexture(object, texture) {
-  let signal = Textures.get(texture).signal;
-  object.material.setTextureSlot("DIFFUSE", signal);
-}
-
-function setLoopIterations(i) {
-  if (activateLoopFunctionality === true) {
-    clickSound.setPlaying(true);
-    clickSound.reset();
-  }
-  if (
-    findCommandIndex("loop_") !== undefined &&
-    activateLoopFunctionality === true
-  ) {
-    loopIterations = i;
-    setTexture(
-      commands[findCommandIndex("loop_")].block,
-      "loop_" + i + "_block"
-    );
-  }
-}
-
-function findCommandIndex(command) {
-  let index;
-  for (let i = 0; i < commands.length; i++) {
-    if (commands[i].command.search(command) !== -1) {
-      index = i;
-      break;
-    }
-  }
-  return index;
-}
-
-function changeState(state, buttonText) {
-  Time.setTimeout(function() {
-    currentState = state;
-    setTexture(buttons.child("btn8"), buttonText);
-  }, 500);
+    .catch(function(error) { Diagnostics.log('unable to load high score data') });
+
+function saveHighScore() {
+    // Indicate high score
+    Time.setTimeout(function() {playAudio('playCongratsAudio');}, 1200);
+    // Update best score to current score
+    bestScoreDigits.forEach(function(digit, i) {
+        digit.material.diffuse = scoreDigits[i].material.diffuse;
+    });
+    // Update saved high score
+    userScope.set('DDR_high_score', {score: score})
+        .then(function() { Diagnostics.log('High score saved') })
+        .catch(function(error) { Diagnostics.log(error) });
 }
