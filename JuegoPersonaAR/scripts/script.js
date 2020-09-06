@@ -166,6 +166,24 @@ const instructions = [
 ];
 var currInstruction = 0;
 
+
+// PICKER UI
+// *************************************************************************
+
+const NativeUI = require('NativeUI'); 
+const Materials = require('Materials'); 
+Promise.all([
+    Textures.findFirst('texture0'),
+    Textures.findFirst('texture1'),
+    Textures.findFirst('texture2')
+ ]).then(function(results){
+    const texture0 = results[0];
+    const texture1 = results[1];
+    const texture2 = results[2];
+ });
+
+//*********************************************************************** */
+
 // Setup game 
 //==============================================================================
 // Create the move order for the game. 0 is null/nothing, 1 is lookLeft, etc.
