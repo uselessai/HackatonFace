@@ -38,9 +38,6 @@ const planes = [
     Scene.root.find('plane0'),
     Scene.root.find('plane1'),
     Scene.root.find('plane2'),
-    Scene.root.find('plane3'),
-    Scene.root.find('plane4'),
-    Scene.root.find('plane5')
 ];
 
 const scoreDigits = [
