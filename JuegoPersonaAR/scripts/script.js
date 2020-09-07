@@ -176,6 +176,7 @@ const Materials = require('Materials');
 Promise.all([
     Textures.findFirst('texture0'),
     Textures.findFirst('texture1'),
+    Textures.findFirst('texture1'),
     Textures.findFirst('texture2')
  ]).then(function(results){
     const texture0 = results[0];
