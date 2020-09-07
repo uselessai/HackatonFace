@@ -23,6 +23,8 @@ const Persistence = require('Persistence');
 // Send receive data between script and patches
 const Patches = require('Patches');
 
+
+
 // Get Scene objects
 //==============================================================================
 const instructionPlane = Scene.root.find('instructionLabel');
@@ -106,10 +108,15 @@ const types = [
 ];
 
 // Handle gestures from patch editor
-Patches.getPulseValue('blinkGesture').subscribe(function(e) { gestureHandler('blink') });
-Patches.getPulseValue('lookLeftGesture').subscribe(function(e) { gestureHandler('lookLeft') });
-Patches.getPulseValue('lookRightGesture').subscribe(function(e) { gestureHandler('lookRight') });
-Patches.getPulseValue('openMouthGesture').subscribe(function(e) { gestureHandler('openMouth') });
+//Patches.getPulseValue('blinkGesture').subscribe(function(e) { gestureHandler('blink') });
+//Patches.getPulseValue('lookLeftGesture').subscribe(function(e) { gestureHandler('lookLeft') });
+//Patches.getPulseValue('lookRightGesture').subscribe(function(e) { gestureHandler('lookRight') });
+Patches.getPulseValue('play').subscribe(function(e) { gestureHandler() });
+Patches.getPulseValue('hit').subscribe(function(e) { hit() });
+
+
+
+//Patches.getBooleanValue('play').subscribe(function(e) { gestureHandler('openMouth') });
 
 const currentPosition = Patches.getScalarValue('posicion');
 
@@ -124,14 +131,12 @@ function playAudio(audio) {
 // Setup animations
 //==============================================================================
 // Main loop
-const duration = 5000;
+const duration = 20000;
 const drivers = [
     Animation.timeDriver({durationMilliseconds: duration, loopCount: Infinity, mirror: false}),
     Animation.timeDriver({durationMilliseconds: duration, loopCount: Infinity, mirror: false}),
-    Animation.timeDriver({durationMilliseconds: duration, loopCount: Infinity, mirror: false}),
-    Animation.timeDriver({durationMilliseconds: duration, loopCount: Infinity, mirror: false}),
-    Animation.timeDriver({durationMilliseconds: duration, loopCount: Infinity, mirror: false}),
     Animation.timeDriver({durationMilliseconds: duration, loopCount: Infinity, mirror: false})
+
 ];
 const sampler = Animation.samplers.linear(0, 1);
 const offsets = drivers.map(function(driver) { return Animation.animate(driver, sampler) });
@@ -168,45 +173,7 @@ const instructions = [
 var currInstruction = 0;
 
 
-// PICKER UI
-// *************************************************************************
 
-const NativeUI = require('NativeUI'); 
-const Materials = require('Materials'); 
-Promise.all([
-    Textures.findFirst('texture0'),
-    Textures.findFirst('texture1'),
-    Textures.findFirst('texture1'),
-    Textures.findFirst('texture2')
- ]).then(function(results){
-    const texture0 = results[0];
-    const texture1 = results[1];
-    const texture2 = results[2];
-    const planeMaterial = results[3];
-
-    const picker = NativeUI.picker; 
-
-    const configuration = { 
-        selectedIndex: 0, 
-        items: [ 
-            {image_texture: texture0}, 
-            {image_texture: texture1}, 
-            {image_texture: texture2}, 
-            {image_texture: texture0}, 
-            {image_texture: texture1},
-            {image_texture: texture2}, 
-            {image_texture: texture0}, 
-            {image_texture: texture1}, 
-            {image_texture: texture2} 
-        ]
-    };
-
-    picker.configure(configuration);
-    picker.visible = true;
-    picker.selectedIndex.monitor().subscribe(function(index) {
-        planeMaterial.diffuse = configuration.items[index.newValue].image_texture;
-    });
-});
 
 //*********************************************************************** */
 
@@ -304,55 +271,55 @@ var numErrors = 0;
 
 
 
+function hit() {
 
-function gestureHandler(type) {
-    // If in instruction phase
-    if (!gameStarted) {
-        // check if player does the correct gesture
-        if (type == instructions[currInstruction].type) {
-            currInstruction++;
-            // if instructions aren't done yet, go to next instruction
-            if (currInstruction < instructions.length) {
-                instructionPlane.material.diffuse = instructions[currInstruction].tex;
-                promptRectangle.material.diffuse = instructions[currInstruction].prompt;
-            }
-            else startGame();
-        }
-    }
-    // If playing game
-    else if (!gameOver) {
-        // If player has already attempted prompt, do nothing
-        if (promptAttempted) return;
-        
-        // If player does the correct move
-        if (type == currMove) {
-            promptAttempted = true;
-            // Track how close the prompt is to the middle of the target zone
-            const grade = offsets[currPlane].pinLastValue();
-            Diagnostics.log(grade);
-            Diagnostics.log(currentPosition.pinLastValue());
-         
-            Diagnostics.log('paso por grade');
-            // If not quite in the middle, add 100 points (OK)
-            if (grade <= 0.725 || grade >= 0.775) incrementScore(100);
+    
+        promptAttempted = true;
+        // Track how close the prompt is to the middle of the target zone
+        const grade = offsets[currPlane].pinLastValue();
+        Diagnostics.log(grade);
+
+        // comprobar si es 1, 2 o 3
+        Diagnostics.log("posicion actual personaje" + currentPosition.pinLastValue());
+        Diagnostics.log('posicion actual bicho '  + currPlane);
+        Diagnostics.log('posicion grade como baja Y '  + grade);
+
+
+        // If not quite in the middle, add 100 points (OK)
+        if(currentPosition.pinLastValue() == currPlane)
+        if (grade <= 0.725 || grade >= 0.775){
+            incrementScore(100);
+        } else
+        {
             // If in the middle, add 200 points (PERFECT)
-            else incrementScore(200);
-            // Indicate positive
-            scoreZone.material.diffuse = scoreTex[0];
-            Time.setTimeout(function() {scoreZone.material.diffuse = scoreTex[1]}, duration/15);
-            playAudio('playGoodAudio');
-        }
-        // If player does the wrong move (ignore blinking)
-        else if (type != currMove && type != 'blink') {
-            promptAttempted = true;
-            playAudio('playBadAudio');
-            incrementScore(-100); // deduct 100 points (BAD)
-            // Show error element, check if player has lost
-            xErrors[numErrors].hidden = false;
-            numErrors++;
-            if (numErrors >= xErrors.length) endGame();
-        }
-    }
+            incrementScore(200);
+        } 
+        // Indicate positive
+        scoreZone.material.diffuse = scoreTex[0];
+
+        Time.setTimeout(function() {scoreZone.material.diffuse = scoreTex[1]}, duration/15);
+
+        playAudio('playGoodAudio');
+
+  
+   
+    
+}
+
+
+function gestureHandler() {
+
+
+    const promptOrder = [1, 2, 3, 4, 0, 4, 3, 2, 1, 1, 1, 2, 4, 4, 3, 4, 3, 0, 2, 0];
+    // const promptOrder = Array.from({ length: 1000 }, function() { return Math.floor(Math.random()*types.length) });
+    // Track current move type and plane
+    var currMove = null;
+    var currPlane = 0;
+    // Track if user has already attempted the current prompt to avoid double scoring
+    var promptAttempted = false;
+    startGame();
+   
+    
 }
 
 // End game (win or lose)
@@ -370,11 +337,11 @@ function endGame() {
     fadeOutDriver.onCompleted().subscribe(function() {
         drivers.forEach(function(driver) {driver.stop()});
         xErrors.forEach(function(x) {x.hidden = true});
-        bestScoreContainer.hidden = false;
+     //   bestScoreContainer.hidden = false;
     });
     fadeOutDriver.start();
     // Save score if high score
-    if (score > highScore) saveHighScore();
+ //   if (score > highScore) saveHighScore();
 }
 
 // Persistence Module - save/retrieve high scores
