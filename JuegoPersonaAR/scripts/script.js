@@ -70,26 +70,27 @@ const promptTex = [
     Textures.get('prompts-01'), // blank/none
     Textures.get('prompts-02'), // lookLeft
     Textures.get('prompts-03'), // openMouth
-    Textures.get('prompts-04'), // blink
-    Textures.get('prompts-05') // lookRight
+    Textures.get('pixelparticles'), // blink
+    Textures.get('pixelparticles') // lookRight
 ];
 
 const scoreTex = [
-    Textures.get('scoreFull'), // score indicator
-    Textures.get('scoreDefault') // idle
+    //Textures.get('scoreFull'), // score indicator
+    //Textures.get('scoreDefault') // idle
 ];
 
 const digitTex = [
-    Textures.get('digit0'), // 0
-    Textures.get('digit1'), // 1
-    Textures.get('digit2'), // 2
-    Textures.get('digit3'), // 3
-    Textures.get('digit4'), // 4
-    Textures.get('digit5'), // 5
-    Textures.get('digit6'), // 6
-    Textures.get('digit7'), // 7
-    Textures.get('digit8'), // 8
-    Textures.get('digit9') // 9
+    Textures.get('numbers_0'), // 0
+    Textures.get('numbers_1'),
+    Textures.get('numbers_2'), // 1
+    Textures.get('numbers_3'), // 2
+    Textures.get('numbers_4'), // 3
+    Textures.get('numbers_5'), // 4
+    Textures.get('numbers_6'), // 5
+    Textures.get('numbers_7'), // 6
+    Textures.get('numbers_8'), // 7
+    Textures.get('numbers_9') // 8
+     // 9
 ];
 
 // Setup gestures
@@ -145,22 +146,22 @@ const fadeOut = Animation.animate(fadeOutDriver, fadeSampler);
 const instructions = [
     {
         type: 'lookLeft',
-        tex: Textures.get('labelLookLeft'),
+        tex: Textures.get('pixelparticles'),
         prompt: promptTex[1]
     },
     {
         type: 'openMouth',
-        tex: Textures.get('labelOpenMouth'),
+        tex: Textures.get('pixelparticles'),
         prompt: promptTex[2]
     },
     {
         type: 'blink',
-        tex: Textures.get('labelBlink'),
+        tex: Textures.get('pixelparticles'),
         prompt: promptTex[3]
     },
     {
         type: 'lookRight',
-        tex: Textures.get('labelLookRight'),
+        tex: Textures.get('pixelparticles'),
         prompt: promptTex[4]
     }
 ];
@@ -180,7 +181,31 @@ Promise.all([
     const texture0 = results[0];
     const texture1 = results[1];
     const texture2 = results[2];
- });
+    const planeMaterial = results[3];
+
+    const picker = NativeUI.picker; 
+
+    const configuration = { 
+        selectedIndex: 0, 
+        items: [ 
+            {image_texture: texture0}, 
+            {image_texture: texture1}, 
+            {image_texture: texture2}, 
+            {image_texture: texture0}, 
+            {image_texture: texture1},
+            {image_texture: texture2}, 
+            {image_texture: texture0}, 
+            {image_texture: texture1}, 
+            {image_texture: texture2} 
+        ]
+    };
+
+    picker.configure(configuration);
+    picker.visible = true;
+    picker.selectedIndex.monitor().subscribe(function(index) {
+        planeMaterial.diffuse = configuration.items[index.newValue].image_texture;
+    });
+});
 
 //*********************************************************************** */
 
